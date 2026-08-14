@@ -1,10 +1,12 @@
+# Gộp chung backend + frontend vào 1 Web Service DUY NHẤT (Express phục vụ luôn
+# client/dist đã build — xem server/index.js). Không cần Static Site riêng nữa.
 services:
   - type: web
-    name: lado-b2b-agent-server
+    name: lado-b2b-agent
     env: node
-    rootDir: server
-    buildCommand: npm install
-    startCommand: node index.js
+    rootDir: .
+    buildCommand: npm install --prefix server && npm install --prefix client && npm run build --prefix client
+    startCommand: node server/index.js
     envVars:
       # Nhà cung cấp tìm địa điểm mặc định. Đặt = google nếu bạn có billing account hợp lệ
       # ngoài Việt Nam và muốn dùng Google Places thay vì Vietmap.
@@ -17,23 +19,3 @@ services:
       # Tuỳ chọn: chỉ cần nếu chuyển PLACES_PROVIDER=google.
       - key: GOOGLE_MAPS_API_KEY
         sync: false
-
-  - type: web
-    name: lado-b2b-agent-client
-    env: static
-    rootDir: client
-    buildCommand: npm install && npm run build
-    staticPublishPath: dist
-    # Frontend gọi API bằng đường dẫn tương đối "/api/..." (xem client/src/App.jsx).
-    # Rule dưới đây cho Render TỰ ĐỘNG chuyển tiếp mọi request /api/* sang đúng backend ở trên,
-    # để frontend + backend hoạt động như CÙNG 1 domain, không cần cấu hình CORS.
-    #
-    # LƯU Ý QUAN TRỌNG: sau lần deploy ĐẦU TIÊN, vào Render Dashboard xem đúng URL thật của
-    # service "lado-b2b-agent-server" (Render có thể tự thêm hậu tố ngẫu nhiên nếu tên bị trùng,
-    # vd lado-b2b-agent-server-ab12.onrender.com) rồi sửa lại "destination" bên dưới cho khớp,
-    # sau đó redeploy lại client (hoặc sửa trực tiếp trong Render Dashboard > Redirects/Rewrites,
-    # không cần sửa file này).
-    routes:
-      - type: rewrite
-        source: /api/*
-        destination: https://lado-b2b-agent-server.onrender.com/api/:splat
