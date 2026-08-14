@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: lado-b2b-agent-server
+    env: node
+    rootDir: server
+    buildCommand: npm install
+    startCommand: node index.js
+    envVars:
+      - key: GOOGLE_MAPS_API_KEY
+        sync: false
+
+  - type: web
+    name: lado-b2b-agent-client
+    env: static
+    rootDir: client
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
