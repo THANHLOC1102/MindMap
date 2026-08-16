@@ -46,6 +46,26 @@ npm run dev
 
 Mở `http://localhost:5173`. Vite dev server đã cấu hình proxy `/api` → `http://localhost:4000`.
 
+**2. Cài đặt (chỉ cần làm 1 lần, hoặc mỗi khi có thêm dependency mới):**
+
+bash
+cd lado-b2b-agent
+npm install
+npm run install:all
+
+(npm install cài concurrently; npm run install:all cài dependency riêng cho cả server lẫn client.)
+
+**3. Từ giờ chỉ cần 1 lệnh duy nhất để chạy cả 2:**
+
+bash
+npm run dev
+
+Sẽ thấy log gộp chung 1 cửa sổ terminal, phân biệt bằng màu và nhãn [SERVER] (xanh dương) / [CLIENT] (xanh lá):
+
+[SERVER] Lado B2B Data Finder server đang chạy tại http://localhost:4000
+[CLIENT] ➜  Local:   http://localhost:5173/
+
+Bấm Ctrl + C 1 lần là tắt cả 2 cùng lúc.
 ## Cách dùng: tìm theo Phân khúc mong muốn
 
 1. Chọn **Phân khúc** ở dropdown đầu trang:
