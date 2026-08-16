@@ -9,8 +9,10 @@
 //  - Vietmap Autocomplete v3 là API tìm kiếm địa điểm/địa chỉ theo văn bản, không có khái niệm
 //    "business type" chuyên biệt như Google Text Search, nên độ chính xác khi tìm theo phân khúc
 //    (vd "khách sạn") phụ thuộc vào việc dữ liệu POI có gắn từ khóa/danh mục phù hợp hay không.
-//  - Response KHÔNG có field website — cột Website trong kết quả sẽ để trống, bạn có thể bổ
-//    sung thủ công sau nếu cần.
+//  - Theo tài liệu chính thức của Vietmap (Autocomplete v3 + Place v3), response KHÔNG có field
+//    website — cột Website trong kết quả gần như luôn để trống (đã thử đọc phòng trường hợp một
+//    số POI đặc biệt có trả, nhưng không đảm bảo). Muốn có website đầy đủ, cần nguồn dữ liệu khác
+//    (Google Places, hoặc nhập tay).
 //  - Mỗi request tối đa trả về 10 kết quả (giới hạn của Vietmap, không có tham số page/limit).
 
 import { loadLocations } from "./locations.js";
@@ -162,14 +164,22 @@ function boundaryByType(boundaries = [], type) {
   return boundaries.find((b) => b.type === type);
 }
 
-function normalizePlace(item) {
-  const cityB = boundaryByType(item.boundaries, 0);
+// city truyền vào là MÃ THÀNH PHỐ người dùng đã chọn (HCM/HN/DN) — dùng thẳng mã này để lưu,
+// KHÔNG lấy tên đầy đủ từ boundaries nữa. Lý do: Master Data hiện tại đang bị lưu 2 kiểu khác
+// nhau cho cùng 1 thành phố (vd vừa có "Thành Phố Hồ Chí Minh" vừa có "HCM"), nên từ nay chuẩn
+// hoá về 1 kiểu DUY NHẤT (HCM/HN/DN) cho toàn bộ dữ liệu tìm mới, để lọc/tìm kiếm sau này nhất quán.
+function normalizePlace(item, cityCode) {
   const districtB = boundaryByType(item.boundaries, 1);
   return {
     name: item.name || "",
-    address: item.display || item.address || "",
-    city: cityB?.full_name || "",
-    website: "", // Vietmap Autocomplete/Place API không trả về website
+    // Ưu tiên item.address: theo tài liệu Vietmap, đây là "địa chỉ đầy đủ gồm số nhà/đường/
+    // phường/quận/thành phố" nhưng KHÔNG kèm tên doanh nghiệp (khác với item.display, vốn ghép
+    // thêm tên doanh nghiệp lên trước). Nhờ vậy cột Địa chỉ tự động chỉ còn "từ số nhà trở đi".
+    address: item.address || item.display || "",
+    city: cityCode || "",
+    // Vietmap Autocomplete/Place API v3 KHÔNG có field website trong tài liệu chính thức, nhưng
+    // vẫn thử đọc phòng trường hợp 1 số POI đặc biệt có trả (không đảm bảo, đa số sẽ để trống).
+    website: item.website || item.homepage || item.url || "",
     placeId: item.ref_id || "",
     types: (item.categories || []).map((c) => c.name || c).filter(Boolean),
     district: districtB?.full_name || "",
@@ -319,7 +329,7 @@ export async function searchVietmapPlaces(filters) {
       refIds.push(item.ref_id);
       if (seenIds.has(item.ref_id)) continue;
       seenIds.add(item.ref_id);
-      allResults.push(normalizePlace(item));
+      allResults.push(normalizePlace(item, city));
     }
 
     return { rawCount: items.length, refIds };

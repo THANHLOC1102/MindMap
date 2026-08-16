@@ -128,16 +128,11 @@ export default function App() {
         `Đã lưu ${data.confirmed.length} doanh nghiệp mới vào Master Data (DATA B2B LADO.xlsx trên server, tổng cộng ${data.total} dòng).`,
       );
       setResults(data.confirmed);
-      downloadMasterData();
     } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);
     }
-  }
-
-  function downloadMasterData() {
-    window.open("/api/master-data/download", "_blank");
   }
 
   async function exportExcel() {
@@ -167,7 +162,7 @@ export default function App() {
   return (
     <div className="app">
       <div className="app-header">
-        <h1>MapMind</h1>
+        <h1>MapAgent</h1>
         <p>Tìm kiếm, lọc và bổ sung dữ liệu doanh nghiệp từ Vietmap.</p>
       </div>
 
