@@ -26,7 +26,12 @@ process.on("unhandledRejection", (reason) => {
 });
 
 app.use(cors());
-app.use(express.json());
+// Mặc định express.json() chỉ nhận body TỐI ĐA 100KB — quá nhỏ so với danh sách vài trăm
+// doanh nghiệp (mỗi doanh nghiệp có tên/địa chỉ/website...) gửi lên khi "Xác nhận & lưu" hay
+// "Xuất Excel" cho 1 Phân khúc đông đúc (vd Nhà hàng, quét đầy đủ nhiều phường). Vượt 100KB,
+// Express từ chối với lỗi "PayloadTooLargeError" (không phải JSON) -> client cố res.json()
+// bị lỗi parse. Nới lên 25MB cho thoải mái.
+app.use(express.json({ limit: "25mb" }));
 
 app.use("/api", searchRouter);
 app.use("/api", placesRouter);
