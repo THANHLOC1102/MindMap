@@ -281,9 +281,9 @@ function splitCircleIntoQuadrants(center, radiusMeters) {
  *
  *  Tầng 1 — theo ranh giới hành chính:
  *   - Nếu quận nào người dùng có chọn phường/xã cụ thể -> gọi riêng từng phường đó.
- *   - Nếu quận KHÔNG chọn phường nào -> gọi 1 lần cho cả quận trước; nếu ĐÚNG 10 kết quả
- *     (nghi bị cắt) -> tự lấy toàn bộ danh sách phường/xã của quận (từ data/wards.json)
- *     và gọi lại API riêng cho từng phường.
+ *   - Nếu quận KHÔNG chọn phường nào -> coi như chọn TẤT CẢ phường/xã của quận đó (lấy từ
+ *     data/wards.json) và gọi riêng cho TỪNG phường (không gọi 1 lần cho cả quận nữa — xem
+ *     giải thích chi tiết ngay tại vòng lặp bên dưới).
  *
  *  Tầng 2 — theo VỊ TRÍ (toạ độ thật), áp dụng cho MỌI phường vẫn còn đầy 10 kết quả sau
  *  tầng 1 (kể cả phường người dùng tự chọn): lấy toạ độ (lat/lng) thật của 10 địa điểm vừa
@@ -378,30 +378,32 @@ export async function searchVietmapPlaces(filters) {
   }
 
   for (const district of districtList) {
-    const wardsInDistrict = wardsByDistrict?.[district];
+    // Danh sách phường cần tìm: nếu người dùng đã chọn phường cụ thể -> dùng đúng danh sách đó.
+    // Nếu KHÔNG chọn phường nào (chỉ chọn Quận) -> coi như "chọn TẤT CẢ phường của quận đó"
+    // (lấy từ data/wards.json), rồi tìm riêng từng phường — KHÔNG gọi 1 lần cho cả quận nữa.
+    //
+    // Lý do đổi cách này: trước đây code chỉ chia nhỏ theo phường KHI kết quả cấp quận trả về
+    // ĐÚNG 10 (nghi bị cắt). Nhưng Vietmap Autocomplete là tìm kiếm văn bản tổng quát, khi
+    // 1 quận rộng không có nhiều địa điểm khớp mạnh với từ khoá, nó thường trả về DƯỚI 10 kết
+    // quả (thường lẫn cả kết quả không liên quan) — nên điều kiện "đúng 10" gần như không bao
+    // giờ đúng, khiến rất nhiều phường trong quận KHÔNG BAO GIỜ được tìm tới, bỏ sót hàng loạt
+    // địa điểm thật (vd nhiều chi nhánh 1 chuỗi cà phê nằm rải rác ở các phường khác nhau).
+    // Tìm riêng từng phường (giống hệt cách tìm khi người dùng tự chọn 1 phường, vốn đã đúng)
+    // đảm bảo QUÉT HẾT, không phụ thuộc vào việc cấp quận có "bị cắt" hay không.
+    const wardsInDistrict = wardsByDistrict?.[district]?.length
+      ? wardsByDistrict[district]
+      : district
+        ? loadLocations()[city]?.districts?.[district] || []
+        : [];
 
-    if (wardsInDistrict?.length) {
-      // Người dùng đã tự chọn phường cụ thể -> tìm riêng từng phường, vẫn tự chia nhỏ
-      // tiếp theo vị trí nếu 1 phường nào đó quá đông kết quả.
+    if (wardsInDistrict.length) {
       for (const ward of wardsInDistrict) {
         await searchWardExhaustive(district, ward);
       }
-      continue;
-    }
-
-    // Không chọn phường -> tìm nguyên quận trước (1 lần gọi).
-    const districtText = buildSearchText({ ...filters, district, ward: null });
-    const { rawCount } = await fetchAndMerge(districtText);
-
-    // Kết quả trả về ĐÚNG giới hạn 10 -> nghi bị cắt bớt, còn sót địa điểm trong quận.
-    // Tự động chia nhỏ theo TỪNG phường/xã của quận đó (lấy từ data/wards.json), mỗi phường
-    // lại tự chia tiếp theo vị trí (tầng 2) nếu cần, để quét hết mà không cần người dùng
-    // tự chọn phường.
-    if (rawCount >= VIETMAP_PAGE_LIMIT && district) {
-      const wardsOfDistrict = loadLocations()[city]?.districts?.[district] || [];
-      for (const ward of wardsOfDistrict) {
-        await searchWardExhaustive(district, ward);
-      }
+    } else {
+      // Không có district cụ thể (city-wide) hoặc không tra được danh sách phường -> tìm
+      // nguyên vùng đó, vẫn tự chia theo vị trí (tầng 2) nếu quá đông kết quả.
+      await searchWardExhaustive(district, null);
     }
   }
 

@@ -3,12 +3,32 @@ import { parseQuery } from "../lib/queryParser.js";
 import { searchPlaces, isPlacesConfigured, getAttribution, getProviderName } from "../lib/placesProvider.js";
 import { sortByDistrictOrder } from "../lib/filterEngine.js";
 import { dedupeAgainstMasterData } from "../lib/duplicateChecker.js";
-import { SEGMENT_CODES, SEGMENT_SEARCH_LABEL, isValidSegmentCode } from "../lib/segmentCodes.js";
+import { SEGMENT_CODES, SEGMENT_SEARCH_LABEL, SEGMENT_KEYWORDS, normalizeText, isValidSegmentCode } from "../lib/segmentCodes.js";
 import { generateNextCode, appendRowsToMasterData } from "../lib/excelReader.js";
 import { loadLocations } from "../lib/locations.js";
 import { getMasterDataCache, setMasterDataCache } from "./search.js";
 
 const router = Router();
+
+// Vietmap Autocomplete là tìm kiếm địa điểm/địa chỉ theo văn bản TỔNG QUÁT — không phải
+// "tìm đúng loại hình doanh nghiệp X" như Google Places Text Search. Khi 1 khu vực nhỏ không
+// có nhiều kết quả khớp mạnh với từ khoá, Vietmap vẫn trả về "gần đúng nhất" tìm được (kể cả
+// không liên quan, vd trụ sở công an, cửa hàng sửa điện thoại) thay vì trả rỗng.
+//
+// Hàm này LỌC LẠI kết quả thô: chỉ giữ những địa điểm có TÊN (hoặc categories) chứa ít nhất
+// 1 từ khoá đặc trưng của đúng Phân khúc đang tìm (vd "cà phê"/"bakery"/"highlands" cho CB).
+// Nếu Phân khúc không có bảng từ khoá (CP quá chung chung, hoặc Phân khúc tự do người dùng tự
+// gõ) -> KHÔNG lọc, giữ nguyên toàn bộ vì không đủ căn cứ để tự động loại bỏ.
+function filterCandidatesBySegment(candidates, segmentCode) {
+  const keywords = segmentCode ? SEGMENT_KEYWORDS[segmentCode] : null;
+  if (!keywords?.length) return candidates;
+
+  const normalizedKeywords = keywords.map((kw) => normalizeText(kw));
+  return candidates.filter((item) => {
+    const haystack = normalizeText(`${item.name} ${(item.types || []).join(" ")}`);
+    return normalizedKeywords.some((kw) => haystack.includes(kw));
+  });
+}
 
 router.get("/places/status", (req, res) => {
   res.json({ configured: isPlacesConfigured(), provider: getProviderName() });
@@ -89,7 +109,12 @@ router.post("/places/search", async (req, res) => {
       segmentText: resolved.segmentText,
       rawQuery: keywordText,
     });
-    const { uniqueNew, duplicates } = dedupeAgainstMasterData(candidates, masterRows);
+
+    // Loại bỏ kết quả rác không liên quan tới Phân khúc đang tìm (xem giải thích ở
+    // filterCandidatesBySegment phía trên) TRƯỚC khi so trùng với Master Data.
+    const relevantCandidates = filterCandidatesBySegment(candidates, resolved.code);
+
+    const { uniqueNew, duplicates } = dedupeAgainstMasterData(relevantCandidates, masterRows);
 
     let proposed = uniqueNew.map((item) => ({
       maKH: null,
@@ -108,6 +133,22 @@ router.post("/places/search", async (req, res) => {
     // Sắp xếp ĐÚNG theo thứ tự quận người dùng chọn (quận chọn trước hiện trước),
     // không tự sắp tăng/giảm dần.
     proposed = sortByDistrictOrder(proposed, districts);
+
+    // Đánh dấu các doanh nghiệp CÙNG TÊN xuất hiện từ 2 lần trở lên trong CHÍNH lần tìm này
+    // (khả năng cao là 1 chuỗi có nhiều chi nhánh trong khu vực đang tìm) — ghi chú vào cột
+    // "Loại hình" (vốn luôn để trống hiện tại) để người dùng nhận biết ngay trên kết quả/Excel,
+    // không cần thêm cột mới. Không đụng vào cột Địa chỉ, giữ nguyên chỉ là địa chỉ thật.
+    const nameCounts = new Map();
+    for (const p of proposed) {
+      const key = normalizeText(p.tenDoanhNghiep);
+      nameCounts.set(key, (nameCounts.get(key) || 0) + 1);
+    }
+    for (const p of proposed) {
+      const count = nameCounts.get(normalizeText(p.tenDoanhNghiep));
+      if (count > 1) {
+        p.loaiHinh = `Chuỗi (${count} chi nhánh tìm thấy)`;
+      }
+    }
 
     // Gán TRƯỚC Mã KH theo đúng thứ tự hiển thị ở trên (chỉ khi Phân khúc có trong bảng mã) —
     // để người dùng thấy mã ngay khi xem/xuất Excel, không phải đợi tới lúc "Xác nhận & lưu".
