@@ -12,6 +12,19 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const PORT = process.env.PORT || 4000;
 
+// AN TOÀN TOÀN CỤC: nếu có lỗi bất ngờ không được try/catch bắt đúng chỗ (vd cố gắng trả
+// response cho 1 kết nối trình duyệt đã tự ngắt giữa chừng vì chờ quá lâu), Node mặc định
+// sẽ CRASH TOÀN BỘ server (không riêng gì request đang lỗi) — đây chính là nguyên nhân server
+// bị "restart" đột ngột khi tìm Phân khúc quá đông kết quả (vd Nhà hàng). Bắt các lỗi này lại
+// ở đây để CHỈ LOG ra console, KHÔNG làm sập toàn bộ server, các request khác vẫn tiếp tục
+// hoạt động bình thường.
+process.on("uncaughtException", (err) => {
+  console.error("[Server] ⚠️ Lỗi không được bắt (uncaughtException) — server VẪN tiếp tục chạy:", err);
+});
+process.on("unhandledRejection", (reason) => {
+  console.error("[Server] ⚠️ Promise bị reject không được bắt (unhandledRejection) — server VẪN tiếp tục chạy:", reason);
+});
+
 app.use(cors());
 app.use(express.json());
 
@@ -46,9 +59,15 @@ if (fs.existsSync(CLIENT_DIST)) {
 
 async function start() {
   await initMasterDataCache();
-  app.listen(PORT, () => {
+  const server = app.listen(PORT, () => {
     console.log(`Lado B2B Data Finder server đang chạy tại http://localhost:${PORT}`);
   });
+  // Tìm kiếm ở khu vực rất đông đúc (vd Phân khúc Nhà hàng ở cả 1 quận lớn) có thể mất
+  // hơn 2 phút do phải gọi Vietmap nhiều lần (giới hạn tốc độ 200 request/phút). Nới thời
+  // gian chờ mặc định của Node lên 5 phút để không tự ngắt giữa chừng những request hợp lệ
+  // nhưng chạy lâu.
+  server.requestTimeout = 5 * 60 * 1000;
+  server.headersTimeout = 5 * 60 * 1000 + 5000;
 }
 
 start().catch((err) => {

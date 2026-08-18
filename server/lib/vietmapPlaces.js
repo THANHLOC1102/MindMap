@@ -126,7 +126,14 @@ function scheduleVietmapRequest(doFetch) {
   return scheduled;
 }
 
-export const VIETMAP_ATTRIBUTION =
+// GIỚI HẠN TỔNG SỐ LẦN GỌI VIETMAP cho 1 LẦN TÌM (cộng dồn cả Autocomplete lẫn Place API,
+// qua mọi phường/vùng tròn con). Không có giới hạn này, 1 Phân khúc siêu đông đúc (vd "Nhà
+// hàng" — nhiều gấp chục lần "Hãng hàng không") tìm ở khu vực rộng (nhiều quận, mỗi quận
+// nhiều phường, mỗi phường có thể chia tiếp 2 tầng theo toạ độ) có thể cần tới HÀNG TRĂM lần
+// gọi -> mất vài phút -> trình duyệt/proxy tự ngắt kết nối giữa chừng trước khi có kết quả.
+// Khi chạm giới hạn này, DỪNG tìm thêm và trả về kết quả đã thu thập được (kèm cờ
+// possiblyIncomplete để route báo cho người dùng biết có thể còn sót).
+const MAX_REQUESTS_PER_SEARCH = Number(process.env.VIETMAP_MAX_REQUESTS_PER_SEARCH || 200);
   "Dữ liệu doanh nghiệp từ Vietmap Place API — cần hiển thị theo chính sách của Vietmap khi dùng lại.";
 
 export function isVietmapConfigured() {
@@ -305,6 +312,25 @@ export async function searchVietmapPlaces(filters) {
   const focus = CITY_FOCUS[city];
   const allResults = [];
   const seenIds = new Set();
+  let requestCount = 0;
+  let budgetExceeded = false;
+  let budgetWarningLogged = false;
+
+  function hasBudget() {
+    if (requestCount >= MAX_REQUESTS_PER_SEARCH) {
+      budgetExceeded = true;
+      if (!budgetWarningLogged) {
+        budgetWarningLogged = true;
+        console.warn(
+          `[Vietmap] ⚠️ Đã chạm giới hạn ${MAX_REQUESTS_PER_SEARCH} lần gọi cho 1 lần tìm (Phân khúc/khu vực quá đông đúc). ` +
+            `Dừng tìm thêm, trả về ${allResults.length} kết quả đã thu thập được. Có thể tăng VIETMAP_MAX_REQUESTS_PER_SEARCH ` +
+            `trong server/.env nếu muốn quét kỹ hơn (đổi lại request sẽ chạy lâu hơn).`
+        );
+      }
+      return false;
+    }
+    return true;
+  }
 
   // Giữ ĐÚNG thứ tự quận người dùng chọn, để giữ đúng thứ tự khi hiển thị/sort kết quả sau này.
   const districtList = districts?.length ? districts : [null];
@@ -314,6 +340,9 @@ export async function searchVietmapPlaces(filters) {
   // có nghi bị cắt bớt hay không; refIds = ref_id của TẤT CẢ kết quả lần gọi này (dùng để lấy
   // toạ độ khi cần chia nhỏ theo vị trí ở tầng 2, kể cả những item đã seen trước đó).
   async function fetchAndMerge(text, extraGeo) {
+    if (!hasBudget()) return { rawCount: 0, refIds: [] };
+    requestCount += 1;
+
     let items;
     try {
       items = await callAutocomplete(text, focus, extraGeo);
@@ -338,10 +367,12 @@ export async function searchVietmapPlaces(filters) {
   // Tầng 2 (ẩn): khi 1 vùng (phường hoặc vùng tròn con) vẫn đầy 10 kết quả, chia nhỏ tiếp theo
   // TOẠ ĐỘ THẬT của các kết quả vừa thấy, thay vì đoán tên đường/từ khoá.
   async function splitByLocationIfNeeded(text, refIds, depth) {
-    if (depth >= MAX_GEO_SPLIT_DEPTH) return;
+    if (depth >= MAX_GEO_SPLIT_DEPTH || !hasBudget()) return;
 
     const points = [];
     for (const refId of refIds.slice(0, GEO_SAMPLE_SIZE)) {
+      if (!hasBudget()) break;
+      requestCount += 1;
       const pt = await fetchPlaceLatLng(refId);
       if (pt) points.push(pt);
     }
@@ -358,6 +389,7 @@ export async function searchVietmapPlaces(filters) {
 
     const quadrants = splitCircleIntoQuadrants(center, searchRadius);
     for (const q of quadrants) {
+      if (!hasBudget()) break;
       const { rawCount, refIds: subRefIds } = await fetchAndMerge(text, {
         circleCenter: q.center,
         circleRadius: q.radius,
@@ -398,6 +430,7 @@ export async function searchVietmapPlaces(filters) {
 
     if (wardsInDistrict.length) {
       for (const ward of wardsInDistrict) {
+        if (!hasBudget()) break;
         await searchWardExhaustive(district, ward);
       }
     } else {
@@ -407,5 +440,9 @@ export async function searchVietmapPlaces(filters) {
     }
   }
 
+  // Gắn cờ vào chính mảng kết quả (không đổi kiểu dữ liệu trả về, vẫn là mảng như cũ, chỉ
+  // thêm 1 thuộc tính phụ) để route phía trên biết và báo cho người dùng nếu bị dừng sớm do
+  // chạm giới hạn số request — tránh im lặng trả về thiếu mà không ai biết.
+  allResults.possiblyIncomplete = budgetExceeded;
   return allResults;
 }

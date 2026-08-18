@@ -195,9 +195,18 @@ router.post("/places/search", async (req, res) => {
       total: proposed.length,
       newBusinesses: proposed,
       duplicatesSkipped: duplicates.length,
+      possiblyIncomplete: Boolean(candidates.possiblyIncomplete),
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error("[places/search] Lỗi:", err);
+    // Nếu client (trình duyệt/proxy) đã tự ngắt kết nối giữa chừng vì chờ quá lâu, response
+    // có thể đã bắt đầu gửi hoặc socket đã đóng — cố res.json() lần nữa lúc này sẽ ném lỗi
+    // KHÁC (vd "ERR_HTTP_HEADERS_SENT"), lỗi đó nếu không được bắt sẽ làm SẬP CẢ SERVER
+    // (đây chính là nguyên nhân server bị crash khi tìm Phân khúc quá đông kết quả). Kiểm
+    // tra headersSent trước khi trả lỗi để tránh việc này.
+    if (!res.headersSent) {
+      res.status(500).json({ error: err.message });
+    }
   }
 });
 
@@ -238,7 +247,10 @@ router.post("/places/confirm", async (req, res) => {
 
     res.json({ confirmed, total: updatedRows.length });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error("[places/confirm] Lỗi:", err);
+    if (!res.headersSent) {
+      res.status(500).json({ error: err.message });
+    }
   }
 });
 
