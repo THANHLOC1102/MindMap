@@ -30,6 +30,41 @@ function filterCandidatesBySegment(candidates, segmentCode) {
   });
 }
 
+// Gộp các mục CÙNG TÊN (so khớp không dấu/không phân biệt hoa-thường) thành 1 dòng duy nhất:
+// - Địa chỉ: nối tất cả địa chỉ các chi nhánh vào chung 1 ô, cách nhau bởi " ; ".
+// - Tên: gắn thêm "(Chuỗi - N chi nhánh)" ngay sau tên gốc, CHỈ khi có từ 2 chi nhánh trở lên.
+// - Website: giữ website của chi nhánh đầu tiên có website (nếu có), vì không thể gộp nhiều
+//   website vào 1 ô theo cách có ý nghĩa.
+// Giữ nguyên thứ tự xuất hiện đầu tiên của mỗi tên trong danh sách gốc.
+function mergeChainDuplicates(proposed) {
+  const order = [];
+  const groups = new Map(); // tên đã chuẩn hoá -> mảng các dòng cùng tên
+
+  for (const p of proposed) {
+    const key = normalizeText(p.tenDoanhNghiep);
+    if (!groups.has(key)) {
+      groups.set(key, []);
+      order.push(key);
+    }
+    groups.get(key).push(p);
+  }
+
+  return order.map((key) => {
+    const items = groups.get(key);
+    if (items.length === 1) return items[0];
+
+    const merged = { ...items[0] };
+    merged.tenDoanhNghiep = `${items[0].tenDoanhNghiep} (Chuỗi - ${items.length} chi nhánh)`;
+    merged.diaChi = items
+      .map((it) => it.diaChi)
+      .filter(Boolean)
+      .join(" ; ");
+    const withWebsite = items.find((it) => it.website);
+    if (withWebsite) merged.website = withWebsite.website;
+    return merged;
+  });
+}
+
 router.get("/places/status", (req, res) => {
   res.json({ configured: isPlacesConfigured(), provider: getProviderName() });
 });
@@ -130,25 +165,15 @@ router.post("/places/search", async (req, res) => {
       needsReview: !resolved.code, // đánh dấu để người dùng kiểm tra nếu chưa có mã Phân khúc
     }));
 
+    // GỘP các doanh nghiệp CÙNG TÊN (khả năng cao là nhiều chi nhánh của 1 chuỗi) thành
+    // MỘT dòng duy nhất, thay vì hiển thị N dòng riêng biệt: nối tất cả địa chỉ vào chung
+    // 1 ô (cách nhau bởi " ; "), và gắn nhãn "(Chuỗi - N chi nhánh)" ngay sau tên doanh
+    // nghiệp để người dùng biết ngay đây là chuỗi mà không cần thêm cột riêng.
+    proposed = mergeChainDuplicates(proposed);
+
     // Sắp xếp ĐÚNG theo thứ tự quận người dùng chọn (quận chọn trước hiện trước),
     // không tự sắp tăng/giảm dần.
     proposed = sortByDistrictOrder(proposed, districts);
-
-    // Đánh dấu các doanh nghiệp CÙNG TÊN xuất hiện từ 2 lần trở lên trong CHÍNH lần tìm này
-    // (khả năng cao là 1 chuỗi có nhiều chi nhánh trong khu vực đang tìm) — ghi chú vào cột
-    // "Loại hình" (vốn luôn để trống hiện tại) để người dùng nhận biết ngay trên kết quả/Excel,
-    // không cần thêm cột mới. Không đụng vào cột Địa chỉ, giữ nguyên chỉ là địa chỉ thật.
-    const nameCounts = new Map();
-    for (const p of proposed) {
-      const key = normalizeText(p.tenDoanhNghiep);
-      nameCounts.set(key, (nameCounts.get(key) || 0) + 1);
-    }
-    for (const p of proposed) {
-      const count = nameCounts.get(normalizeText(p.tenDoanhNghiep));
-      if (count > 1) {
-        p.loaiHinh = `Chuỗi (${count} chi nhánh tìm thấy)`;
-      }
-    }
 
     // Gán TRƯỚC Mã KH theo đúng thứ tự hiển thị ở trên (chỉ khi Phân khúc có trong bảng mã) —
     // để người dùng thấy mã ngay khi xem/xuất Excel, không phải đợi tới lúc "Xác nhận & lưu".

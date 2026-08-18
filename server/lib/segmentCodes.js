@@ -22,12 +22,22 @@ export const SEGMENT_CODES = {
 // khớp qua hàm normalize() (bỏ dấu, lowercase — xem queryParser.js) nên chỉ cần viết 1 dạng
 // có dấu là đủ, không cần liệt kê thêm bản không dấu song song.
 export const SEGMENT_KEYWORDS = {
+  // "khách sạn" là từ hầu như MỌI khách sạn VN đều có trong tên (khác với chuỗi cà phê) nên
+  // không cần bổ sung thêm thương hiệu cụ thể.
   HT: ["hotel", "khách sạn"],
-  RS: ["resort"],
-  RT: ["restaurant", "nhà hàng", "dining"],
-  BK: ["bank", "ngân hàng"],
-  RE: ["real estate", "bất động sản", "property"],
-  EA: ["event agency", "event", "sự kiện"],
+  // Resort ở VN hầu hết vẫn giữ nguyên chữ "resort" (từ mượn) trong tên thương hiệu, thêm
+  // "khu nghỉ dưỡng" (tên gọi tiếng Việt) để tăng độ phủ.
+  RS: ["resort", "khu nghỉ dưỡng"],
+  // "dining" hiếm khi xuất hiện trong tên nhà hàng thật ở VN -> bỏ, thay bằng "quán ăn" (cách
+  // gọi phổ biến hơn "nhà hàng" với nhiều quán vừa/nhỏ) để tăng độ phủ.
+  RT: ["restaurant", "nhà hàng", "quán ăn"],
+  // Nhiều thương hiệu ngân hàng lớn KHÔNG chứa "bank"/"ngân hàng" trong tên viết tắt thường
+  // dùng làm tên POI (vd ACB, BIDV, VIB, SHB, OCB, SCB, MSB) -> liệt kê thêm để không bị lọc
+  // nhầm là rác, tương tự cách xử lý các chuỗi cà phê lớn ở CB bên dưới.
+  BK: ["bank", "ngân hàng", "acb", "bidv", "vib", "shb", "ocb", "scb", "msb", "vietcombank", "techcombank", "sacombank", "agribank", "vietinbank"],
+  // Thêm "bđs" (viết tắt cực phổ biến trong tên công ty/biển hiệu môi giới BĐS ở VN).
+  RE: ["real estate", "bất động sản", "property", "bđs"],
+  EA: ["event agency", "event", "sự kiện", "tổ chức sự kiện"],
   // Thêm từ khoá tiếng Việt tự nhiên ("cà phê", "bánh") + tên 1 số chuỗi lớn thường gặp, vì
   // tên các chuỗi này (Highlands, Phúc Long, Katinat...) không nhất thiết chứa chữ "cafe"/
   // "coffee" nên trước đây dễ bị lọc nhầm là "không liên quan".
@@ -48,11 +58,21 @@ export const SEGMENT_KEYWORDS = {
     "urban station",
     "starbucks",
   ],
-  SP: ["spa", "wellness"],
-  IN: ["insurance", "bảo hiểm"],
-  WP: ["wedding planner", "wedding", "cưới"],
-  AL: ["airline", "airlines", "hàng không"],
-  CP: ["corporate", "doanh nghiệp", "company", "co., ltd", "jsc"],
+  // Thêm "massage" và "thẩm mỹ viện" — nhiều spa thật ở VN dùng các từ này trong tên thay vì
+  // riêng "spa"/"wellness".
+  SP: ["spa", "wellness", "massage", "thẩm mỹ viện"],
+  // Nhiều hãng bảo hiểm lớn hoạt động ở VN KHÔNG chứa "insurance"/"bảo hiểm" trong tên thương
+  // hiệu (vd Manulife, Prudential, AIA, Dai-ichi, Generali, FWD, Chubb) -> liệt kê thêm.
+  IN: ["insurance", "bảo hiểm", "manulife", "prudential", "aia", "dai-ichi", "generali", "fwd", "chubb", "bảo việt", "pvi", "pti", "mic", "bic"],
+  WP: ["wedding planner", "wedding", "cưới", "tổ chức đám cưới", "cưới hỏi"],
+  // Các hãng hàng không lớn KHÔNG chứa "airline"/"hàng không" trong tên thương hiệu.
+  AL: ["airline", "airlines", "hàng không", "vietnam airlines", "vietjet", "bamboo airways", "pacific airlines", "vasco"],
+  // QUAN TRỌNG: CP là phân khúc "bắt tất" (dùng khi không xác định được phân khúc cụ thể nào
+  // khác), nên từ khoá phải khớp đúng cách đặt tên công ty THẬT ở VN — đa số bắt đầu bằng
+  // "Công ty TNHH..." hoặc "Công ty Cổ phần...", KHÔNG phải "corporate"/"jsc"/"co., ltd" như
+  // trước (những từ này gần như không ai dùng trong tên POI thật, khiến CP lọc oan hầu hết
+  // kết quả hợp lệ). Sửa lại cho khớp thực tế.
+  CP: ["công ty", "cty", "tnhh", "cổ phần", "tập đoàn", "doanh nghiệp", "corporate", "company", "corp"],
 };
 
 // Chuẩn hóa chuỗi: bỏ dấu tiếng Việt + lowercase, dùng chung cho việc đoán/lọc Phân khúc
@@ -88,7 +108,10 @@ export const SEGMENT_SEARCH_LABEL = {
   // Kết quả là tiệm bánh vẫn được giữ lại bình thường qua bước lọc SEGMENT_KEYWORDS.CB ở trên
   // (có "bánh"/"bakery"), chỉ là không dùng "bakery" làm từ khoá tìm chính vì kém hiệu quả hơn.
   CB: "cà phê",
-  SP: "spa wellness",
+  // Đổi từ "spa wellness" (ghép 2 từ tiếng Anh) sang "spa" đơn — cùng lý do như CB ở trên:
+  // query càng đơn giản/tự nhiên càng khớp tốt với dữ liệu Vietmap. "wellness"/"massage"/
+  // "thẩm mỹ viện" vẫn được giữ lại bình thường qua bước lọc SEGMENT_KEYWORDS.SP ở trên.
+  SP: "spa",
   IN: "công ty bảo hiểm",
   WP: "wedding planner",
   AL: "hãng hàng không",
