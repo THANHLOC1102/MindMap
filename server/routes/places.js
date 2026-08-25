@@ -142,6 +142,7 @@ router.post("/places/search", async (req, res) => {
       wardsByDistrict,
       keywords: parsed.keywords,
       segmentText: resolved.segmentText,
+      segmentCode: resolved.code,
       rawQuery: keywordText,
     });
 

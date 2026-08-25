@@ -75,6 +75,69 @@ export const SEGMENT_KEYWORDS = {
   CP: ["công ty", "cty", "tnhh", "cổ phần", "tập đoàn", "doanh nghiệp", "corporate", "company", "corp"],
 };
 
+// QUAN TRỌNG: Vietmap Autocomplete xếp hạng kết quả theo ĐỘ KHỚP CHỮ với query text + khoảng
+// cách, KHÔNG theo "mức độ nổi tiếng"/quy mô chuỗi. Với query chung chung như "cà phê", ở 1
+// phường có hàng chục quán nhỏ tên kiểu "Cà Phê Anh Công", "Cà Phê Rupi"... (khớp chữ tuyệt
+// đối với "cà phê"), các chuỗi tên tiếng Anh như "Highlands Coffee", "Phúc Long", "Katinat"
+// (không chứa cụm "cà phê") RẤT DỄ bị các quán nhỏ đó "chiếm hết" top 10 kết quả, dù chuỗi
+// thật sự có mặt trong khu vực. Việc lọc lại (SEGMENT_KEYWORDS ở trên) không cứu được vì nó
+// chỉ GIỮ/BỎ kết quả Vietmap đã trả về, không thể "kéo thêm" kết quả Vietmap chưa từng trả.
+//
+// Giải pháp: với các Phân khúc có thương hiệu lớn dễ bị lép vế kiểu này, chạy THÊM truy vấn
+// tìm THẲNG bằng tên từng thương hiệu (không qua từ khoá chung), 1 lần/quận (không cần lặp
+// theo từng phường vì tên riêng đã đủ đặc trưng để Vietmap tìm đúng bất kể vị trí trong quận).
+// Chi phí thêm rất nhỏ (vài request/quận), không lặp theo cấp số nhân như tầng chia theo phường.
+export const SEGMENT_BRAND_QUERIES = {
+  CB: [
+    "Highlands Coffee",
+    "Phúc Long",
+    "Katinat",
+    "The Coffee House",
+    "Trung Nguyên Legend",
+    "Cộng Cà Phê",
+    "Starbucks",
+    "Milano Coffee",
+    "Ông Bầu",
+    "Napoli Coffee",
+    "Aha Coffee",
+    "Effoc Coffee",
+  ],
+  BK: [
+    "Vietcombank",
+    "Techcombank",
+    "BIDV",
+    "ACB",
+    "VPBank",
+    "Sacombank",
+    "MB Bank",
+    "VIB",
+    "SHB",
+    "TPBank",
+    "HDBank",
+    "Agribank",
+    "Vietinbank",
+    "OCB",
+    "SCB",
+    "MSB",
+    "Eximbank",
+  ],
+  IN: [
+    "Manulife",
+    "Prudential",
+    "AIA",
+    "Dai-ichi Life",
+    "Generali",
+    "FWD",
+    "Chubb Life",
+    "Bảo Việt",
+    "PVI",
+    "PTI",
+    "MIC",
+    "BIC",
+  ],
+  AL: ["Vietnam Airlines", "Vietjet Air", "Bamboo Airways", "Pacific Airlines", "Vasco"],
+};
+
 // Chuẩn hóa chuỗi: bỏ dấu tiếng Việt + lowercase, dùng chung cho việc đoán/lọc Phân khúc
 // trong file này. Định nghĩa RIÊNG (không import từ queryParser.js) để tránh vòng lặp import,
 // vì queryParser.js đang import ngược lại SEGMENT_KEYWORDS từ chính file này.

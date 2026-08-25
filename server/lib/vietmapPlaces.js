@@ -16,6 +16,7 @@
 //  - Mỗi request tối đa trả về 10 kết quả (giới hạn của Vietmap, không có tham số page/limit).
 
 import { loadLocations } from "./locations.js";
+import { SEGMENT_BRAND_QUERIES } from "./segmentCodes.js";
 
 const AUTOCOMPLETE_URL = "https://maps.vietmap.vn/api/autocomplete/v3";
 const PLACE_URL = "https://maps.vietmap.vn/api/place/v3"; // dùng để lấy toạ độ (lat/lng) thật của 1 địa điểm theo ref_id
@@ -134,6 +135,8 @@ function scheduleVietmapRequest(doFetch) {
 // Khi chạm giới hạn này, DỪNG tìm thêm và trả về kết quả đã thu thập được (kèm cờ
 // possiblyIncomplete để route báo cho người dùng biết có thể còn sót).
 const MAX_REQUESTS_PER_SEARCH = Number(process.env.VIETMAP_MAX_REQUESTS_PER_SEARCH || 200);
+
+export const VIETMAP_ATTRIBUTION =
   "Dữ liệu doanh nghiệp từ Vietmap Place API — cần hiển thị theo chính sách của Vietmap khi dùng lại.";
 
 export function isVietmapConfigured() {
@@ -437,6 +440,20 @@ export async function searchVietmapPlaces(filters) {
       // Không có district cụ thể (city-wide) hoặc không tra được danh sách phường -> tìm
       // nguyên vùng đó, vẫn tự chia theo vị trí (tầng 2) nếu quá đông kết quả.
       await searchWardExhaustive(district, null);
+    }
+
+    // BỔ SUNG: tìm thẳng theo TÊN từng thương hiệu lớn (nếu Phân khúc này có trong
+    // SEGMENT_BRAND_QUERIES) — 1 lần/quận, KHÔNG lặp theo từng phường. Xem giải thích đầy đủ
+    // ở SEGMENT_BRAND_QUERIES (segmentCodes.js): các chuỗi tên tiếng Anh như Highlands Coffee,
+    // Phúc Long dễ bị hàng chục quán nhỏ tên "Cà Phê..." chiếm hết top 10 kết quả khi tìm bằng
+    // từ khoá chung, nên cần tìm thẳng bằng tên riêng mới chắc chắn thấy được.
+    const brandQueries = filters.segmentCode ? SEGMENT_BRAND_QUERIES[filters.segmentCode] : null;
+    if (brandQueries?.length && hasBudget()) {
+      for (const brand of brandQueries) {
+        if (!hasBudget()) break;
+        const text = buildSearchText({ ...filters, segmentText: brand, keywords: [], district, ward: null });
+        await fetchAndMerge(text);
+      }
     }
   }
 
