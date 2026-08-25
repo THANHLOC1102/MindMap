@@ -19,10 +19,27 @@ export default function App() {
   const [statusNote, setStatusNote] = useState("");
 
   useEffect(() => {
-    fetch("/api/places/segments")
-      .then((res) => res.json())
-      .then((data) => setSegments(data.segments || {}))
-      .catch(() => {});
+    let cancelled = false;
+    function loadSegments(retriesLeft = 3) {
+      fetch("/api/places/segments")
+        .then((res) => res.json())
+        .then((data) => {
+          if (!cancelled) setSegments(data.segments || {});
+        })
+        .catch(() => {
+          if (cancelled) return;
+          if (retriesLeft > 0)
+            setTimeout(() => loadSegments(retriesLeft - 1), 2000);
+          else
+            setError(
+              "Không tải được danh sách Phân khúc, vui lòng tải lại trang.",
+            );
+        });
+    }
+    loadSegments();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   function effectiveSegmentCode() {
